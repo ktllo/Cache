@@ -63,8 +63,7 @@ public class Cache<K, V> implements java.util.Map<K, V> {
 
 		@Override
 		public Iterator<V> iterator() {
-			// TODO Auto-generated method stub
-			return null;
+			return new Enumerator();
 		}
 
 		@Override
