@@ -1,7 +1,9 @@
 package org.leolo.util;
 
 import java.util.AbstractCollection;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.ConcurrentModificationException;
 import java.util.HashSet;
 import java.util.Hashtable;
@@ -9,16 +11,18 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.TreeMap;
 
 public class Cache<K, V> implements java.util.Map<K, V> {
 
 	class CacheItem<E> {
+		final long CREATED_TIME;
 		E item;
-
 		long lastAccess = Long.MIN_VALUE;
 		public CacheItem(E value) {
+			CREATED_TIME = System.currentTimeMillis();
 			item = value;
-			lastAccess = System.currentTimeMillis();
+			lastAccess = CREATED_TIME;
 		}
 	}
 
@@ -104,11 +108,80 @@ public class Cache<K, V> implements java.util.Map<K, V> {
 		}
 
 	}
+	
+	/**
+	 * Set the policy for removing the entry in the cache
+	 * @author leolo@leolo.org
+	 *
+	 */
+	public enum RemovalPolicy{
+		/**
+		 * Standard last recently used
+		 */
+		LEAST_RECENTLY_USED,
+		/**
+		 * Least recently used, but entry older than specified age will be always be
+		 *  removed
+		 */
+		LEAST_RECENTLY_USER_WITH_MAXIMUM_AGE,
+		/**
+		 * Least recently used, but entry last used within specified period will
+		 * always be retained
+		 */
+		LEAST_RECENTLY_USER_WITH_MINIMUM_TIME,
+		/**
+		 * Least recently used, but entry last used within specified period will
+		 * always be retained, and entry older than specified age will always be removed
+		 */
+		LEAST_RECENTLY_USER_WITH_MINIMUM_TIME_MAXIMUM_AGE,
+		/**
+		 * The oldest entry will be removed
+		 */
+		OLDEST;
+		
+	}
+	
+	/**
+	 * Indicate can an entry be removed.
+	 * @author leolo
+	 *
+	 */
+	protected enum RemovalStatus{
+		MAY_REMOVE,
+		MUST_KEEP,
+		MUST_REMOVE;
+	}
+	
+	private class LRUComparator implements Comparator<CacheItem<V>>{
 
+		@Override
+		public int compare(Cache<K, V>.CacheItem<V> o1, Cache<K, V>.CacheItem<V> o2) {
+			return Long.compare(o1.lastAccess, o2.lastAccess);
+		}
+		
+	}
+	
+	private class AgeComparator implements Comparator<CacheItem<V>>{
+
+		@Override
+		public int compare(Cache<K, V>.CacheItem<V> o1, Cache<K, V>.CacheItem<V> o2) {
+			return Long.compare(o1.CREATED_TIME, o2.CREATED_TIME);
+		}
+		
+	}
+	
 	private Hashtable<K, CacheItem<V>> data;
+	
+	private long maxAge = 86_400_000;
+	
+	private int maxSize = 100;
+	
+	private long minTime = 60_000;
 
 	private transient int modCount = 0;
 
+	private RemovalPolicy policy = RemovalPolicy.LEAST_RECENTLY_USED;
+	
 	public Cache() {
 		data = new Hashtable<>();
 	}
@@ -156,6 +229,18 @@ public class Cache<K, V> implements java.util.Map<K, V> {
 		return ci.item;
 	}
 
+	public long getMaxAge() {
+		return maxAge;
+	}
+
+	public int getMaxSize() {
+		return maxSize;
+	}
+
+	public long getMinTime() {
+		return minTime;
+	}
+
 	@Override
 	public boolean isEmpty() {
 		return data.isEmpty();
@@ -164,6 +249,53 @@ public class Cache<K, V> implements java.util.Map<K, V> {
 	@Override
 	public Set<K> keySet() {
 		return data.keySet();
+	}
+
+	public void purge(){
+		ArrayList<CacheItem<V>> mustRemove = new ArrayList<>();
+		ArrayList<CacheItem<V>> mayRemove = new ArrayList<>();
+		//Stage 1: classifsy they cache item status
+		for(CacheItem<V> ci:data.values()){
+			if(policy == RemovalPolicy.LEAST_RECENTLY_USED ||
+					policy == RemovalPolicy.OLDEST){
+				mayRemove.add(ci);
+			}else if(policy == RemovalPolicy.LEAST_RECENTLY_USER_WITH_MAXIMUM_AGE){
+				if(System.currentTimeMillis() - ci.CREATED_TIME > maxAge){
+					mustRemove.add(ci);
+				}else{
+					mayRemove.add(ci);
+				}
+			}else if(policy == RemovalPolicy.LEAST_RECENTLY_USER_WITH_MINIMUM_TIME_MAXIMUM_AGE){
+				if(System.currentTimeMillis() - ci.CREATED_TIME > maxAge){
+					mustRemove.add(ci);
+				}else if(System.currentTimeMillis() - ci.lastAccess > minTime){
+					mayRemove.add(ci);
+				}
+			}else if(policy == RemovalPolicy.LEAST_RECENTLY_USER_WITH_MINIMUM_TIME){
+				if(System.currentTimeMillis() - ci.lastAccess > minTime){
+					mayRemove.add(ci);
+				}
+			}
+		}
+		//Stage 2: Remove all item from must remove
+		for(CacheItem<V> ci:mustRemove){
+			data.remove(ci);
+		}
+		if(size()>maxSize){
+			if(policy == RemovalPolicy.OLDEST){
+				mayRemove.sort(new AgeComparator());
+			}else{
+				mayRemove.sort(new LRUComparator());
+			}
+			while(size()>=maxSize){
+				data.remove(mayRemove.get(0));
+				if(mayRemove.size()==1){
+					return;
+				}else{
+					mayRemove.remove(0);
+				}
+			}
+		}
 	}
 
 	@Override
@@ -192,13 +324,33 @@ public class Cache<K, V> implements java.util.Map<K, V> {
 		}
 	}
 
+	public void setMax_age(long maxAge) {
+		this.maxAge = maxAge;
+	}
+
+	public void setMaxSize(int maxSize) {
+		this.maxSize = maxSize;
+	}
+
+	public void setMin_time(long minTime) {
+		this.minTime = minTime;
+	}
+
 	@Override
 	public int size() {
 		return data.size();
 	}
-
+	
 	@Override
 	public Collection<V> values() {
 		return new DataCollection();
+	}
+
+	public RemovalPolicy getPolicy() {
+		return policy;
+	}
+
+	public void setPolicy(RemovalPolicy policy) {
+		this.policy = policy;
 	}
 }
