@@ -296,7 +296,7 @@ public class Cache<K, V> implements java.util.Map<K, V> {
 			}else{
 				mayRemove.sort(new LRUComparator());
 			}
-			while(size()>maxSize){
+			while(size()>maxSize && mayRemove.size()>0){
 				remove(mayRemove.get(0));
 				if(mayRemove.size()==1){
 					return;
