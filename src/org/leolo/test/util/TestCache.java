@@ -22,6 +22,31 @@ public class TestCache {
 	}
 	
 	@Test
+	public void old() throws InterruptedException {
+		Cache<Integer, String> cache = new Cache<>();
+		if(cache.size()!=0) fail("Init size");
+		for(int i=0;i<10;i++){
+			cache.put(i, Integer.toString(i));
+			Thread.sleep(1);
+		}
+		if(cache.size()!=10) fail("Incorrect size");
+		cache.setPolicy(Cache.RemovalPolicy.OLDEST);
+		cache.setMaxSize(5);
+		cache.purge();
+		if(cache.size()!=5) fail("Incorrect size post purge, size "+cache.size());
+		for(int i=5;i<10;i++){
+			String s = cache.get(i);
+			if(!Integer.toString(i).equals(s)) fail("Incorrect Value i="+i+", v="+s);
+		}
+		for(int i=0;i<5;i++){
+			String s = cache.get(i);
+			if(s!=null) fail("Incorrect Value");
+		}
+		cache.clear();
+		if(cache.size()!=0) fail("Clear size");
+	}
+	
+	@Test
 	public void LRU() throws InterruptedException{
 		Cache<Integer, String> cache = new Cache<>();
 		if(cache.size()!=0) fail("Init size");
@@ -70,7 +95,7 @@ public class TestCache {
 		cache.clear();
 		if(cache.size()!=0) fail("Clear size");
 	}
-	
+
 	@Test
 	public void maxAge() throws InterruptedException{
 		Cache<Integer, String> cache = new Cache<>();
@@ -95,5 +120,41 @@ public class TestCache {
 			if(!Integer.toString(i).equals(s)) fail("Incorrect Value");
 		}
 	}
-
+	@Test
+	public void minTime() throws InterruptedException{
+		Cache<Integer, String> cache = new Cache<>();
+		if(cache.size()!=0) fail("Init size");
+		cache.setMaxSize(10);
+		cache.setPolicy(Cache.RemovalPolicy.LEAST_RECENTLY_USER_WITH_MINIMUM_TIME);
+		cache.setMinTime(1000);
+		for(int i=0;i<1000;i++)
+			cache.put(i, Integer.toString(i));
+		if(cache.size()!=1000) fail("Incorrect size");
+		cache.purge();
+		if(cache.size()!=1000) fail("Incorrect size post purge, size "+cache.size());
+		Thread.sleep(1003);
+		for(int i=0;i<1000;i+=2){
+			String s = cache.get(i);
+			if(!Integer.toString(i).equals(s)) fail("Incorrect Value");
+		}
+		cache.purge();
+		if(cache.size()!=500) fail("Incorrect size post purge, size "+cache.size());
+		for(int i=0;i<1000;i+=2){
+			String s = cache.get(i);
+			if(!Integer.toString(i).equals(s)) fail("Incorrect Value");
+		}
+		for(int i=1;i<1000;i+=2){
+			String s = cache.get(i);
+			if(s!=null) fail("Incorrect Value");
+		}
+		
+	}
+	
+	@Test
+	public void purgeEmpty(){
+		Cache<Integer, String> cache = new Cache<>();
+		if(cache.size()!=0) fail("Init size");
+		cache.purge();
+		if(cache.size()!=0) fail("Init size");
+	}
 }
