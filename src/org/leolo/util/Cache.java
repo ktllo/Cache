@@ -174,6 +174,8 @@ public class Cache<K, V> implements java.util.Map<K, V> {
 		
 	}
 	
+	private boolean autoPurge = false;
+	
 	private Hashtable<K, CacheItem<V>> data;
 	
 	private long maxAge = 86_400_000;
@@ -262,7 +264,7 @@ public class Cache<K, V> implements java.util.Map<K, V> {
 		ArrayList<K> mayRemove = new ArrayList<>();
 		//Stage 1: classifsy they cache item status
 		for(K key:data.keySet()){
-			CacheItem ci = data.get(key);
+			CacheItem<V> ci = data.get(key);
 			if(policy == RemovalPolicy.LEAST_RECENTLY_USED ||
 					policy == RemovalPolicy.OLDEST){
 				mayRemove.add(key);
@@ -305,8 +307,7 @@ public class Cache<K, V> implements java.util.Map<K, V> {
 		}
 	}
 
-	@Override
-	public V put(K key, V value) {
+	private V __put(K key, V value) {
 		++modCount;
 		V tmp;
 		synchronized (this) {
@@ -315,12 +316,20 @@ public class Cache<K, V> implements java.util.Map<K, V> {
 		}
 		return tmp;
 	}
+	
+	@Override
+	public V put(K key, V value) {
+		V val = __put(key, value);
+		if(autoPurge) purge();
+		return val;
+	}
 
 	@Override
 	public void putAll(Map<? extends K, ? extends V> m) {
 		for (K key : m.keySet()) {
-			put(key, m.get(key));
+			__put(key, m.get(key));
 		}
+		if(autoPurge) purge();
 	}
 
 	@Override
@@ -360,5 +369,13 @@ public class Cache<K, V> implements java.util.Map<K, V> {
 
 	public void setPolicy(RemovalPolicy policy) {
 		this.policy = policy;
+	}
+
+	public boolean isAutoPurge() {
+		return autoPurge;
+	}
+
+	public void setAutoPurge(boolean autoPurge) {
+		this.autoPurge = autoPurge;
 	}
 }
